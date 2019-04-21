@@ -35,6 +35,7 @@ import spack.paths
 import spack.store
 import spack.compilers
 import spack.directives
+import spack.dependency
 import spack.directory_layout
 import spack.error
 import spack.fetch_strategy as fs
@@ -530,7 +531,8 @@ class PackageBase(with_metaclass(PackageMeta, PackageViewMixin, object)):
 
     @classmethod
     def possible_dependencies(
-            cls, transitive=True, expand_virtuals=True, visited=None):
+            cls, transitive=True, expand_virtuals=True, deptype='all',
+            visited=None):
         """Return set of possible transitive dependencies of this package.
 
         Note: the set returned *includes* the package itself.
@@ -540,29 +542,43 @@ class PackageBase(with_metaclass(PackageMeta, PackageViewMixin, object)):
                 only direct dependencies if False.
             expand_virtuals (bool): expand virtual dependencies into all
                 possible implementations.
+            deptype (str or tuple): dependency types to consider
             visited (set): set of names of dependencies visited so far.
         """
-        if visited is None:
-            visited = set([cls.name])
+        deptype = spack.dependency.canonical_deptype(deptype)
 
-        for i, name in enumerate(cls.dependencies):
+        if visited is None:
+            visited = {cls.name: set()}
+
+        for name, conditions in cls.dependencies.items():
+            # check whether this dependency could be of the type asked for
+            types = [dep.type for cond, dep in conditions.items()]
+            types = set.union(*types)
+            if not any(d in types for d in deptype):
+                continue
+
+            # expand virtuals if enabled, otherwise just stop at virtuals
             if spack.repo.path.is_virtual(name):
                 if expand_virtuals:
                     providers = spack.repo.path.providers_for(name)
                     dep_names = [spec.name for spec in providers]
                 else:
-                    visited.add(name)
+                    visited.setdefault(name, set())
                     continue
             else:
                 dep_names = [name]
 
+            # add the dependency names to the visited dict
+            visited.setdefault(cls.name, set()).update(set(dep_names))
+
+            # recursively traverse dependencies
             for dep_name in dep_names:
                 if dep_name not in visited:
-                    visited.add(dep_name)
+                    visited.setdefault(dep_name, set())
                     if transitive:
-                        pkg = spack.repo.get(dep_name)
-                        pkg.possible_dependencies(
-                            transitive, expand_virtuals, visited)
+                        dep_cls = spack.repo.path.get_pkg_class(dep_name)
+                        dep_cls.possible_dependencies(
+                            transitive, expand_virtuals, deptype, visited)
 
         return visited
 
