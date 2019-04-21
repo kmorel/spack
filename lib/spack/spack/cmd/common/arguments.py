@@ -8,6 +8,7 @@ import argparse
 
 import spack.cmd
 import spack.config
+import spack.dependency as dep
 import spack.environment as ev
 import spack.modules
 import spack.spec
@@ -101,6 +102,19 @@ class SetParallelJobs(argparse.Action):
         pass
 
 
+class DeptypeAction(argparse.Action):
+    """Creates a tuple of valid dependency tpyes from a deptype argument."""
+    def __call__(self, parser, namespace, values, option_string=None):
+        deptype = dep.all_deptypes
+        if values:
+            deptype = tuple(values.split(','))
+            if deptype == ('all',):
+                deptype = 'all'
+            deptype = dep.canonical_deptype(deptype)
+
+        setattr(namespace, self.dest, deptype)
+
+
 _arguments['constraint'] = Args(
     'constraint', nargs=argparse.REMAINDER, action=ConstraintAction,
     help='constraint to select a subset of installed packages')
@@ -124,6 +138,11 @@ _arguments['clean'] = Args(
     default=spack.config.get('config:dirty'),
     dest='dirty',
     help='unset harmful variables in the build environment (default)')
+
+_arguments['deptype'] = Args(
+    '--deptype', action=DeptypeAction, default=dep.all_deptypes,
+    help="comma-separated list of deptypes to traverse\ndefault=%s"
+    % ','.join(dep.all_deptypes))
 
 _arguments['dirty'] = Args(
     '--dirty',
